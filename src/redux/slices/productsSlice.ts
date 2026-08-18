@@ -1,38 +1,42 @@
-import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
-import type { Product, ProductsResponse } from "@/types/product";
+import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { Product } from "@/types/product";
+import { getProducts } from "@/services/products";
 
 interface ProductsState {
-    products: Product[];
-    loading: boolean;
-    error: string | null;
+    itemsByPage: Record<number, Product[]>;
     currentPage: number;
     total: number;
+    loading: boolean;
+    error: string | null;
 }
 
 const initialState: ProductsState = {
-    products: [],
-    loading: false,
-    error: null,
+    itemsByPage: {},
     currentPage: 1,
     total: 0,
+    loading: false,
+    error: null,
 };
 
-export const fetchProducts = createAsyncThunk(
-    "products/fetchProducts",
-    async ({ limit, skip }: { limit: number; skip: number }) => {
-        const res = await axios.get<ProductsResponse>(
-            `https://dummyjson.com/products?limit=${limit}&skip=${skip}`
-        );
-        return res.data;
-    }
-);
+export const fetchProducts = createAsyncThunk("products/fetchProducts", async (page: number) => {
+    const data = await getProducts(page);
+    return { page, ...data };
+});
 
 const productsSlice = createSlice({
     name: "products",
     initialState,
     reducers: {
-        setCurrentPage: (state, action) => {
+        hydrateProducts: (
+            state,
+            action: PayloadAction<{ page: number; products: Product[]; total: number }>
+        ) => {
+            const { page, products, total } = action.payload;
+            state.itemsByPage[page] = products;
+            state.currentPage = page;
+            state.total = total;
+        },
+        setCurrentPage: (state, action: PayloadAction<number>) => {
             state.currentPage = action.payload;
         },
     },
@@ -43,16 +47,18 @@ const productsSlice = createSlice({
                 state.error = null;
             })
             .addCase(fetchProducts.fulfilled, (state, action) => {
+                const { page, products, total } = action.payload;
+                state.itemsByPage[page] = products;
+                state.currentPage = page;
+                state.total = total;
                 state.loading = false;
-                state.products = action.payload.products;
-                state.total = action.payload.total;
             })
             .addCase(fetchProducts.rejected, (state, action) => {
                 state.loading = false;
-                state.error = action.error.message ?? "Something went wrong";
+                state.error = action.error.message ?? "Failed to fetch products";
             });
     },
 });
 
-export const { setCurrentPage } = productsSlice.actions;
+export const { hydrateProducts, setCurrentPage } = productsSlice.actions;
 export default productsSlice.reducer;
